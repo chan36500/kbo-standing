@@ -72,7 +72,7 @@ function dedupe(arr) { const seen = {}, out = []; for (const t of arr) if (!seen
           }
           if (!team) continue;
           const ints = cells.slice(ti + 1).filter(c => /^\d+$/.test(c)).map(Number);
-          if (ints.length >= 3) out.push({ name: team, w: ints[1], l: ints[2], d: ints.length >= 4 ? ints[3] : 0 });
+          if (ints.length >= 3) { var a = ints[2], b = ints.length >= 4 ? ints[3] : 0; out.push({ name: team, w: ints[1], l: Math.max(a, b), d: Math.min(a, b) }); }
         }
         return out;
       }, TEAMS10);
@@ -112,6 +112,29 @@ function dedupe(arr) { const seen = {}, out = []; for (const t of arr) if (!seen
   } catch (e) { console.error('경기 수집 실패(무시):', e.message); }
 
   await browser.close();
+
+  // ===== 최근 5경기 (이전 standings.json 과 비교해 W/L 누적) =====
+  let prevMap = {};
+  try {
+    if (fs.existsSync('standings.json')) {
+      const prev = JSON.parse(fs.readFileSync('standings.json', 'utf8'));
+      if (prev && Array.isArray(prev.teams)) prev.teams.forEach(p => { prevMap[p.name] = p; });
+    }
+  } catch (e) { console.error('이전 standings.json 읽기 실패(무시):', e.message); }
+
+  teams.forEach(t => {
+    const p = prevMap[t.name];
+    let form = (p && Array.isArray(p.form)) ? p.form.slice() : [];
+    if (p) {
+      const dw = Math.max(0, (t.w || 0) - (p.w || 0));
+      const dl = Math.max(0, (t.l || 0) - (p.l || 0));
+      const dd = Math.max(0, (t.d || 0) - (p.d || 0));
+      for (let i = 0; i < Math.min(dw, 5); i++) form.push('W');
+      for (let i = 0; i < Math.min(dl, 5); i++) form.push('L');
+      for (let i = 0; i < Math.min(dd, 5); i++) form.push('D');
+    }
+    t.form = form.slice(-5);
+  });
 
   const data = {
     updated: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
