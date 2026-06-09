@@ -40,49 +40,25 @@ function dedupe(arr) { const seen = {}, out = []; for (const t of arr) if (!seen
 // ----- 오늘 경기 추출용 -----
 const _kst = new Date(Date.now() + 9 * 3600 * 1000);
 const _pad = n => String(n).padStart(2, '0');
-const TODAY_KEYS = [
-  `${_kst.getUTCFullYear()}${_pad(_kst.getUTCMonth() + 1)}${_pad(_kst.getUTCDate())}`,
-  `${_kst.getUTCFullYear()}-${_pad(_kst.getUTCMonth() + 1)}-${_pad(_kst.getUTCDate())}`,
-  `${_kst.getUTCFullYear()}.${_pad(_kst.getUTCMonth() + 1)}.${_pad(_kst.getUTCDate())}`,
-  `${_pad(_kst.getUTCMonth() + 1)}.${_pad(_kst.getUTCDate())}`,
-  `${_kst.getUTCMonth() + 1}.${_kst.getUTCDate()}`
-];
-function teamFromVal(v) {
-  if (v == null) return null;
-  if (typeof v === 'string') return matchTeam(v);
-  if (typeof v === 'object') { const n = v.name || v.teamName || v.shortName || v.teamShortName || v.nameMain; return n ? matchTeam(n) : null; }
-  return null;
-}
-function gameDateStr(node) {
-  let s = '';
-  for (const k in node) { const lk = k.toLowerCase(); if (lk.includes('date') || lk === 'ymd' || lk.includes('gameymd')) { const v = node[k]; if (typeof v === 'string' || typeof v === 'number') s += ' ' + v; } }
-  return s;
-}
-function shallow(node) {
-  const o = {};
-  for (const k in node) { const v = node[k]; if (v === null || typeof v !== 'object') o[k] = v; else { const n = v.name || v.teamName || v.shortName; o[k] = n ? ('{name:' + n + '}') : '{obj}'; } }
-  return o;
-}
+const TODAY_YMD = `${_kst.getUTCFullYear()}${_pad(_kst.getUTCMonth() + 1)}${_pad(_kst.getUTCDate())}`;
+const STADIUMS = ['잠실', '문학', '대구', '광주', '사직', '창원', '대전', '수원', '고척', '포항', '울산', '청주'];
 function walkGames(node, found) {
   if (node === null || typeof node !== 'object') return;
   if (Array.isArray(node)) { node.forEach(n => walkGames(n, found)); return; }
-  let home = null, away = null, time = '', stadium = '';
-  for (const k in node) {
-    const lk = k.toLowerCase();
-    if (lk.includes('home')) { const t = teamFromVal(node[k]); if (t) home = home || t; }
-    if (lk.includes('away') || lk.includes('visit')) { const t = teamFromVal(node[k]); if (t) away = away || t; }
-    if (lk.includes('stadium') || lk.includes('ground') || lk.includes('place') || lk.includes('venue')) { if (typeof node[k] === 'string') stadium = stadium || node[k]; }
-    if (lk.includes('time') || lk.includes('start')) { const m = String(node[k]).match(/\d{1,2}:\d{2}/); if (m) time = time || m[0]; }
-  }
-  if (home && away && home !== away) {
-    const ds = gameDateStr(node);
-    found.push({ away, home, time, stadium, _today: TODAY_KEYS.some(k => ds.includes(k)), _hasDate: ds.trim().length > 0, _raw: shallow(node) });
+  if (node.homeTeamName && node.awayTeamName && node.startDate) {
+    const home = matchTeam(node.homeTeamName), away = matchTeam(node.awayTeamName);
+    if (home && away && home !== away) {
+      const st = String(node.startTime || '');
+      const time = st.length >= 4 ? st.slice(0, 2) + ':' + st.slice(2, 4) : '';
+      const stadium = STADIUMS.find(s => String(node.fieldName || '').includes(s)) || '';
+      found.push({ away, home, time, stadium, date: String(node.startDate) });
+    }
   }
   for (const k in node) walkGames(node[k], found);
 }
 function dedupeGames(arr) {
   const seen = {}, out = [];
-  for (const g of arr) { const key = [g.away, g.home].sort().join('-'); if (!seen[key]) { seen[key] = 1; out.push({ away: g.away, home: g.home, time: g.time || '', stadium: g.stadium || '' }); } }
+  for (const g of arr) { const key = g.away + '-' + g.home; if (!seen[key]) { seen[key] = 1; out.push({ away: g.away, home: g.home, time: g.time || '', stadium: g.stadium || '' }); } }
   return out.slice(0, 5);
 }
  
@@ -131,24 +107,21 @@ function dedupeGames(arr) {
   }
   if (teams.length < 8) { await browser.close(); console.error('순위 추출 실패'); process.exit(1); }
  
-  // ===== 오늘 경기 (주소에 오늘 날짜를 붙여 오늘 일정만 요청) =====
+  // ===== 오늘 경기 (startDate 가 오늘인 경기만) =====
   let games = [];
   try {
-    const ymd = `${_kst.getUTCFullYear()}${_pad(_kst.getUTCMonth() + 1)}${_pad(_kst.getUTCDate())}`;
     jsonBodies.length = 0; // 이전(순위) 페이지 JSON 비우기
-    await page.goto(`${SCHEDULE_PAGE}?date=${ymd}`, { waitUntil: 'networkidle', timeout: 60000 });
+    await page.goto(`${SCHEDULE_PAGE}?date=${TODAY_YMD}`, { waitUntil: 'networkidle', timeout: 60000 });
     await page.waitForTimeout(4000);
  
     const allG = [];
     for (const body of jsonBodies) { try { walkGames(JSON.parse(body), allG); } catch (e) {} }
-    const todayG = allG.filter(g => g._today);
-    const hasDates = allG.some(g => g._hasDate);
-    const use = todayG.length ? todayG : (hasDates ? [] : allG);
-    games = dedupeGames(use);
+    const todayG = allG.filter(g => g.date === TODAY_YMD);
+    games = dedupeGames(todayG);
  
-    console.log('요청 날짜:', ymd, '| 날짜 키:', TODAY_KEYS.join(','));
-    console.log('수집 결과 → 전체후보:', allG.length, '오늘일치:', todayG.length, '최종:', games.length);
-    console.log('RAW 경기 샘플:', JSON.stringify(allG.slice(0, 3).map(g => g._raw)));
+    const dates = Array.from(new Set(allG.map(g => g.date))).sort();
+    console.log('오늘:', TODAY_YMD, '| 수집된 날짜들:', dates.join(','));
+    console.log('오늘 경기:', JSON.stringify(games));
   } catch (e) { console.error('경기 수집 실패(무시):', e.message); }
  
   await browser.close();
@@ -184,3 +157,4 @@ function dedupeGames(arr) {
   fs.writeFileSync('standings.json', JSON.stringify(data, null, 2));
   console.log(JSON.stringify(data, null, 2));
 })();
+ 
