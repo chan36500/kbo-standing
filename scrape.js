@@ -3,17 +3,17 @@
 //  - 순위(teams): record 페이지에서 (JSON 가로채기 → 표 읽기)
 //  - 오늘 경기(games): schedule 페이지에서 (화면 카드 읽기)
 // 를 뽑아 standings.json 으로 저장합니다. 순위는 필수, 경기는 best-effort.
-
+ 
 const { chromium } = require('playwright');
 const fs = require('fs');
-
+ 
 const TEAMS10 = ['LG', '두산', '키움', 'KT', 'SSG', 'NC', '삼성', 'KIA', '한화', '롯데'];
 const RECORD_PAGES = [
   'https://sports.daum.net/record/kbo',
   'https://m.sports.naver.com/kbaseball/record/index?category=kbo'
 ];
 const SCHEDULE_PAGE = 'https://sports.daum.net/schedule/kbo';
-
+ 
 function matchTeam(name) {
   name = String(name);
   const up = name.toUpperCase();
@@ -36,7 +36,7 @@ function walk(node, found) {
   for (const k in node) walk(node[k], found);
 }
 function dedupe(arr) { const seen = {}, out = []; for (const t of arr) if (!seen[t.name]) { seen[t.name] = 1; out.push(t); } return out; }
-
+ 
 // ----- 오늘 경기 추출용 -----
 const _kst = new Date(Date.now() + 9 * 3600 * 1000);
 const _pad = n => String(n).padStart(2, '0');
@@ -71,7 +71,7 @@ function walkResults(node, out) {
   }
   for (const k in node) walkResults(node[k], out);
 }
-
+ 
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({
@@ -83,7 +83,7 @@ function walkResults(node, out) {
   page.on('response', async (res) => {
     try { const ct = (res.headers()['content-type'] || ''); if (ct.includes('json')) jsonBodies.push(await res.text()); } catch (e) {}
   });
-
+ 
   // ===== 순위 =====
   let teams = [];
   for (const url of RECORD_PAGES) {
@@ -116,27 +116,27 @@ function walkResults(node, out) {
     } catch (e) { console.error('순위 DOM 실패:', e.message); }
   }
   if (teams.length < 8) { await browser.close(); console.error('순위 추출 실패'); process.exit(1); }
-
-  // ===== 오늘 경기 (startDate 가 오늘인 경기만) =====
-  let games = [];
+ 
+  // ===== 최근 일정/결과 수집 (오늘 경기 + 최근 끝난 경기) =====
+  let games = [], finals = [];
   try {
-    jsonBodies.length = 0; // 이전(순위) 페이지 JSON 비우기
-    await page.goto(`${SCHEDULE_PAGE}?date=${TODAY_YMD}`, { waitUntil: 'networkidle', timeout: 60000 });
-    await page.waitForTimeout(4000);
-
+    jsonBodies.length = 0;
+    for (let i = 11; i >= 0; i--) {
+      const dt = new Date(_kst.getTime() - i * 86400000);
+      const ymd = `${dt.getUTCFullYear()}${_pad(dt.getUTCMonth() + 1)}${_pad(dt.getUTCDate())}`;
+      try { await page.goto(`${SCHEDULE_PAGE}?date=${ymd}`, { waitUntil: 'networkidle', timeout: 60000 }); await page.waitForTimeout(1800); } catch (e) {}
+    }
     const allG = [];
-    for (const body of jsonBodies) { try { walkGames(JSON.parse(body), allG); } catch (e) {} }
-    const todayG = allG.filter(g => g.date === TODAY_YMD);
-    games = dedupeGames(todayG);
-
+    for (const body of jsonBodies) { try { const j = JSON.parse(body); walkGames(j, allG); walkResults(j, finals); } catch (e) {} }
+    games = dedupeGames(allG.filter(g => g.date === TODAY_YMD));
     const dates = Array.from(new Set(allG.map(g => g.date))).sort();
     console.log('오늘:', TODAY_YMD, '| 수집된 날짜들:', dates.join(','));
     console.log('오늘 경기:', JSON.stringify(games));
   } catch (e) { console.error('경기 수집 실패(무시):', e.message); }
-
+ 
   await browser.close();
-
-  // ===== 최근 5경기 (schedule 의 끝난 경기 결과로 정확히 계산) =====
+ 
+  // ===== 최근 5경기 (끝난 경기 결과로 정확히 계산) =====
   let prevMap = {};
   try {
     if (fs.existsSync('standings.json')) {
@@ -144,9 +144,7 @@ function walkResults(node, out) {
       if (prev && Array.isArray(prev.teams)) prev.teams.forEach(p => { prevMap[p.name] = p; });
     }
   } catch (e) { console.error('이전 standings.json 읽기 실패(무시):', e.message); }
-
-  let finals = [];
-  for (const body of jsonBodies) { try { walkResults(JSON.parse(body), finals); } catch (e) {} }
+ 
   const seenId = {};
   finals = finals.filter(g => { if (seenId[g.id]) return false; seenId[g.id] = 1; return true; });
   const perTeam = {};
@@ -157,15 +155,11 @@ function walkResults(node, out) {
   });
   teams.forEach(t => {
     const arr = (perTeam[t.name] || []).sort((x, y) => x.date === y.date ? x.seq - y.seq : x.date.localeCompare(y.date));
-    if (arr.length) {
-      t.form = arr.slice(-5).map(e => e.r);
-    } else {
-      const p = prevMap[t.name];
-      t.form = (p && Array.isArray(p.form)) ? p.form.slice(-5) : [];
-    }
+    if (arr.length) t.form = arr.slice(-5).map(e => e.r);
+    else { const p = prevMap[t.name]; t.form = (p && Array.isArray(p.form)) ? p.form.slice(-5) : []; }
   });
   console.log('최근전적 계산: 끝난경기', finals.length, '개');
-
+ 
   const data = {
     updated: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
     teams,
