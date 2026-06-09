@@ -37,6 +37,50 @@ function walk(node, found) {
 }
 function dedupe(arr) { const seen = {}, out = []; for (const t of arr) if (!seen[t.name]) { seen[t.name] = 1; out.push(t); } return out; }
 
+// ----- 오늘 경기 추출용 -----
+const _kst = new Date(Date.now() + 9 * 3600 * 1000);
+const _pad = n => String(n).padStart(2, '0');
+const TODAY_KEYS = [
+  `${_kst.getUTCFullYear()}${_pad(_kst.getUTCMonth() + 1)}${_pad(_kst.getUTCDate())}`,
+  `${_kst.getUTCFullYear()}-${_pad(_kst.getUTCMonth() + 1)}-${_pad(_kst.getUTCDate())}`,
+  `${_kst.getUTCFullYear()}.${_pad(_kst.getUTCMonth() + 1)}.${_pad(_kst.getUTCDate())}`,
+  `${_pad(_kst.getUTCMonth() + 1)}.${_pad(_kst.getUTCDate())}`,
+  `${_kst.getUTCMonth() + 1}.${_kst.getUTCDate()}`
+];
+function teamFromVal(v) {
+  if (v == null) return null;
+  if (typeof v === 'string') return matchTeam(v);
+  if (typeof v === 'object') { const n = v.name || v.teamName || v.shortName || v.teamShortName || v.nameMain; return n ? matchTeam(n) : null; }
+  return null;
+}
+function gameDateStr(node) {
+  let s = '';
+  for (const k in node) { const lk = k.toLowerCase(); if (lk.includes('date') || lk === 'ymd' || lk.includes('gameymd')) { const v = node[k]; if (typeof v === 'string' || typeof v === 'number') s += ' ' + v; } }
+  return s;
+}
+function walkGames(node, found) {
+  if (node === null || typeof node !== 'object') return;
+  if (Array.isArray(node)) { node.forEach(n => walkGames(n, found)); return; }
+  let home = null, away = null, time = '', stadium = '';
+  for (const k in node) {
+    const lk = k.toLowerCase();
+    if (lk.includes('home')) { const t = teamFromVal(node[k]); if (t) home = home || t; }
+    if (lk.includes('away') || lk.includes('visit')) { const t = teamFromVal(node[k]); if (t) away = away || t; }
+    if (lk.includes('stadium') || lk.includes('ground') || lk.includes('place') || lk.includes('venue')) { if (typeof node[k] === 'string') stadium = stadium || node[k]; }
+    if (lk.includes('time') || lk.includes('start')) { const m = String(node[k]).match(/\d{1,2}:\d{2}/); if (m) time = time || m[0]; }
+  }
+  if (home && away && home !== away) {
+    const ds = gameDateStr(node);
+    found.push({ away, home, time, stadium, _today: TODAY_KEYS.some(k => ds.includes(k)), _hasDate: ds.trim().length > 0 });
+  }
+  for (const k in node) walkGames(node[k], found);
+}
+function dedupeGames(arr) {
+  const seen = {}, out = [];
+  for (const g of arr) { const key = [g.away, g.home].sort().join('-'); if (!seen[key]) { seen[key] = 1; out.push({ away: g.away, home: g.home, time: g.time || '', stadium: g.stadium || '' }); } }
+  return out.slice(0, 5);
+}
+
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({
@@ -82,33 +126,29 @@ function dedupe(arr) { const seen = {}, out = []; for (const t of arr) if (!seen
   }
   if (teams.length < 8) { await browser.close(); console.error('순위 추출 실패'); process.exit(1); }
 
-  // ===== 오늘 경기 (best-effort) =====
+  // ===== 오늘 경기 (가로챈 JSON 에서 오늘 날짜만 추출) =====
   let games = [];
   try {
     await page.goto(SCHEDULE_PAGE, { waitUntil: 'networkidle', timeout: 60000 });
-    await page.waitForTimeout(3500);
-    games = await page.evaluate((TEAMS10) => {
-      const STAD = ['잠실', '문학', '대구', '광주', '사직', '창원', '대전', '수원', '고척', '포항', '울산', '청주'];
-      const els = Array.from(document.querySelectorAll('li, a, tr, div'));
-      const seen = {}, out = [];
-      for (const el of els) {
-        const txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
-        if (!txt || txt.length > 70) continue;
-        const found = [];
-        for (const t of TEAMS10) if (txt.toUpperCase().includes(t.toUpperCase())) found.push(t);
-        if (txt.includes('기아') && found.indexOf('KIA') < 0) found.push('KIA');
-        const uniq = found.filter((v, i) => found.indexOf(v) === i);
-        if (uniq.length !== 2) continue;
-        const key = uniq.slice().sort().join('-');
-        if (seen[key]) continue;
-        seen[key] = 1;
-        const tm = txt.match(/\d{1,2}:\d{2}/);
-        const std = STAD.find(s => txt.includes(s)) || '';
-        out.push({ away: uniq[0], home: uniq[1], time: tm ? tm[0] : '', stadium: std });
-      }
-      return out.slice(0, 5);
-    }, TEAMS10);
-    console.log('오늘 경기:', games.length, '개');
+    await page.waitForTimeout(4000);
+
+    const allG = [];
+    for (const body of jsonBodies) { try { walkGames(JSON.parse(body), allG); } catch (e) {} }
+    let todayG = allG.filter(g => g._today);
+    if (todayG.length) {
+      games = dedupeGames(todayG);
+      console.log('오늘 경기(JSON, 날짜일치):', games.length, '개');
+    } else {
+      const noDate = allG.filter(g => !g._hasDate);
+      if (noDate.length) { games = dedupeGames(noDate); console.log('오늘 경기(JSON, 날짜없음):', games.length, '개'); }
+    }
+    console.log('오늘 날짜 키:', TODAY_KEYS.join(', '));
+    if (!games.length) {
+      // 튜닝용: 경기로 보이는 JSON 조각을 로그로 남김
+      console.log('경기 후보(전체):', JSON.stringify(allG.slice(0, 12)));
+      const hint = jsonBodies.filter(b => /home/i.test(b) && /(away|visit)/i.test(b)).slice(0, 1).map(b => b.slice(0, 1500));
+      if (hint.length) console.log('schedule JSON 일부:', hint[0]);
+    }
   } catch (e) { console.error('경기 수집 실패(무시):', e.message); }
 
   await browser.close();
