@@ -3,17 +3,17 @@
 //  - 순위(teams): record 페이지에서 (JSON 가로채기 → 표 읽기)
 //  - 오늘 경기(games): schedule 페이지에서 (화면 카드 읽기)
 // 를 뽑아 standings.json 으로 저장합니다. 순위는 필수, 경기는 best-effort.
-
+ 
 const { chromium } = require('playwright');
 const fs = require('fs');
-
+ 
 const TEAMS10 = ['LG', '두산', '키움', 'KT', 'SSG', 'NC', '삼성', 'KIA', '한화', '롯데'];
 const RECORD_PAGES = [
   'https://sports.daum.net/record/kbo',
   'https://m.sports.naver.com/kbaseball/record/index?category=kbo'
 ];
 const SCHEDULE_PAGE = 'https://sports.daum.net/schedule/kbo';
-
+ 
 function matchTeam(name) {
   name = String(name);
   const up = name.toUpperCase();
@@ -36,7 +36,7 @@ function walk(node, found) {
   for (const k in node) walk(node[k], found);
 }
 function dedupe(arr) { const seen = {}, out = []; for (const t of arr) if (!seen[t.name]) { seen[t.name] = 1; out.push(t); } return out; }
-
+ 
 // ----- 오늘 경기 추출용 -----
 const _kst = new Date(Date.now() + 9 * 3600 * 1000);
 const _pad = n => String(n).padStart(2, '0');
@@ -58,6 +58,11 @@ function gameDateStr(node) {
   for (const k in node) { const lk = k.toLowerCase(); if (lk.includes('date') || lk === 'ymd' || lk.includes('gameymd')) { const v = node[k]; if (typeof v === 'string' || typeof v === 'number') s += ' ' + v; } }
   return s;
 }
+function shallow(node) {
+  const o = {};
+  for (const k in node) { const v = node[k]; if (v === null || typeof v !== 'object') o[k] = v; else { const n = v.name || v.teamName || v.shortName; o[k] = n ? ('{name:' + n + '}') : '{obj}'; } }
+  return o;
+}
 function walkGames(node, found) {
   if (node === null || typeof node !== 'object') return;
   if (Array.isArray(node)) { node.forEach(n => walkGames(n, found)); return; }
@@ -71,7 +76,7 @@ function walkGames(node, found) {
   }
   if (home && away && home !== away) {
     const ds = gameDateStr(node);
-    found.push({ away, home, time, stadium, _today: TODAY_KEYS.some(k => ds.includes(k)), _hasDate: ds.trim().length > 0 });
+    found.push({ away, home, time, stadium, _today: TODAY_KEYS.some(k => ds.includes(k)), _hasDate: ds.trim().length > 0, _raw: shallow(node) });
   }
   for (const k in node) walkGames(node[k], found);
 }
@@ -80,7 +85,7 @@ function dedupeGames(arr) {
   for (const g of arr) { const key = [g.away, g.home].sort().join('-'); if (!seen[key]) { seen[key] = 1; out.push({ away: g.away, home: g.home, time: g.time || '', stadium: g.stadium || '' }); } }
   return out.slice(0, 5);
 }
-
+ 
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({
@@ -92,7 +97,7 @@ function dedupeGames(arr) {
   page.on('response', async (res) => {
     try { const ct = (res.headers()['content-type'] || ''); if (ct.includes('json')) jsonBodies.push(await res.text()); } catch (e) {}
   });
-
+ 
   // ===== 순위 =====
   let teams = [];
   for (const url of RECORD_PAGES) {
@@ -125,34 +130,29 @@ function dedupeGames(arr) {
     } catch (e) { console.error('순위 DOM 실패:', e.message); }
   }
   if (teams.length < 8) { await browser.close(); console.error('순위 추출 실패'); process.exit(1); }
-
-  // ===== 오늘 경기 (가로챈 JSON 에서 오늘 날짜만 추출) =====
+ 
+  // ===== 오늘 경기 (주소에 오늘 날짜를 붙여 오늘 일정만 요청) =====
   let games = [];
   try {
-    await page.goto(SCHEDULE_PAGE, { waitUntil: 'networkidle', timeout: 60000 });
+    const ymd = `${_kst.getUTCFullYear()}${_pad(_kst.getUTCMonth() + 1)}${_pad(_kst.getUTCDate())}`;
+    jsonBodies.length = 0; // 이전(순위) 페이지 JSON 비우기
+    await page.goto(`${SCHEDULE_PAGE}?date=${ymd}`, { waitUntil: 'networkidle', timeout: 60000 });
     await page.waitForTimeout(4000);
-
+ 
     const allG = [];
     for (const body of jsonBodies) { try { walkGames(JSON.parse(body), allG); } catch (e) {} }
-    let todayG = allG.filter(g => g._today);
-    if (todayG.length) {
-      games = dedupeGames(todayG);
-      console.log('오늘 경기(JSON, 날짜일치):', games.length, '개');
-    } else {
-      const noDate = allG.filter(g => !g._hasDate);
-      if (noDate.length) { games = dedupeGames(noDate); console.log('오늘 경기(JSON, 날짜없음):', games.length, '개'); }
-    }
-    console.log('오늘 날짜 키:', TODAY_KEYS.join(', '));
-    if (!games.length) {
-      // 튜닝용: 경기로 보이는 JSON 조각을 로그로 남김
-      console.log('경기 후보(전체):', JSON.stringify(allG.slice(0, 12)));
-      const hint = jsonBodies.filter(b => /home/i.test(b) && /(away|visit)/i.test(b)).slice(0, 1).map(b => b.slice(0, 1500));
-      if (hint.length) console.log('schedule JSON 일부:', hint[0]);
-    }
+    const todayG = allG.filter(g => g._today);
+    const hasDates = allG.some(g => g._hasDate);
+    const use = todayG.length ? todayG : (hasDates ? [] : allG);
+    games = dedupeGames(use);
+ 
+    console.log('요청 날짜:', ymd, '| 날짜 키:', TODAY_KEYS.join(','));
+    console.log('수집 결과 → 전체후보:', allG.length, '오늘일치:', todayG.length, '최종:', games.length);
+    console.log('RAW 경기 샘플:', JSON.stringify(allG.slice(0, 3).map(g => g._raw)));
   } catch (e) { console.error('경기 수집 실패(무시):', e.message); }
-
+ 
   await browser.close();
-
+ 
   // ===== 최근 5경기 (이전 standings.json 과 비교해 W/L 누적) =====
   let prevMap = {};
   try {
@@ -161,7 +161,7 @@ function dedupeGames(arr) {
       if (prev && Array.isArray(prev.teams)) prev.teams.forEach(p => { prevMap[p.name] = p; });
     }
   } catch (e) { console.error('이전 standings.json 읽기 실패(무시):', e.message); }
-
+ 
   teams.forEach(t => {
     const p = prevMap[t.name];
     let form = (p && Array.isArray(p.form)) ? p.form.slice() : [];
@@ -175,7 +175,7 @@ function dedupeGames(arr) {
     }
     t.form = form.slice(-5);
   });
-
+ 
   const data = {
     updated: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
     teams,
