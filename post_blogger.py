@@ -38,6 +38,13 @@ def home_win_prob(home, away):
     return max(15, min(85, round(raw)))
 
 FORM_KO = {"W": "승", "L": "패", "D": "무", "T": "무"}
+
+# 팀별 홈구장 (데이터에 구장이 비어 있을 때 사용)
+HOME_STADIUM = {
+    "LG": "잠실", "두산": "잠실", "키움": "고척",
+    "KT": "수원", "SSG": "문학", "NC": "창원",
+    "삼성": "대구", "KIA": "광주", "한화": "대전", "롯데": "사직",
+}
 def form_html(f):
     color = {"W": "#1a7f37", "L": "#cf222e", "D": "#8b949e", "T": "#8b949e"}
     spans = []
@@ -105,7 +112,7 @@ def build_post(data):
                 pred = f'{g["home"]} {p}% vs {g["away"]} {100-p}%'
             else:
                 pred = "-"
-            stadium = g.get("stadium") or "-"
+            stadium = g.get("stadium") or HOME_STADIUM.get(g["home"], "-")
             H.append('<tr>'
                      f'<td style="padding:10px;border:1px solid #d0d7de;text-align:center;">{g.get("time","-")}</td>'
                      f'<td style="padding:10px;border:1px solid #d0d7de;text-align:center;"><b>{g["away"]}</b> (원정) vs <b>{g["home"]}</b> (홈)</td>'
@@ -154,7 +161,7 @@ def build_post(data):
         '<p style="text-align:center;margin:20px 0;">'
         '<a href="https://kbo.hibestmoney.com" target="_blank" '
         'style="display:inline-block;background:#ff3b30;color:#fff;font-weight:700;font-size:17px;'
-        'padding:14px 28px;border-radius:10px;text-decoration:none;">⚾ KBO 실시간 순위·중계 보러가기 →</a></p>'
+        'padding:14px 28px;border-radius:10px;text-decoration:none;">⚾ 실시간 야구 무료 중계 보러가기 →</a></p>'
     )
     H.append('<p style="font-size:13px;color:#8b949e;">본 콘텐츠는 정보 제공을 목적으로 하며, 순위·일정 데이터는 매일 갱신됩니다.</p>')
     H.append('</div>')
