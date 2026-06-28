@@ -68,6 +68,14 @@ def build_post(data):
     H = []
     H.append('<div style="font-size:16px;line-height:1.8;color:#24292f;">')
 
+    # 상단 배너 이미지 (블로거가 이걸 썸네일로 사용)
+    H.append(
+        '<p style="text-align:center;margin-bottom:20px;">'
+        '<img src="https://raw.githubusercontent.com/chan36500/kbo-standing/main/kbo-thumb-v2.png" '
+        'alt="KBO 순위 오늘 경기 AI 승부예측" '
+        'style="max-width:100%;height:auto;border-radius:10px;"/></p>'
+    )
+
     # 인트로
     gb_txt = "단독 선두" if gb == 0 else f"2위 {second['name']}에 {gb:.1f}경기 차로 앞선 선두"
     intro = (
