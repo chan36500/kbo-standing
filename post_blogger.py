@@ -71,7 +71,7 @@ def build_post(data):
     # 상단 배너 이미지 (블로거가 이걸 썸네일로 사용)
     H.append(
         '<p style="text-align:center;margin-bottom:20px;">'
-        '<img src="https://raw.githubusercontent.com/chan36500/kbo-standing/main/kbo-thumb-v2.png" '
+        '<img src="https://i.ibb.co/GfPD89NQ/kbo-thumb-v2.png" '
         'alt="KBO 순위 오늘 경기 AI 승부예측" '
         'style="max-width:100%;height:auto;border-radius:10px;"/></p>'
     )
