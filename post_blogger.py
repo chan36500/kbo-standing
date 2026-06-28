@@ -159,7 +159,7 @@ def build_post(data):
     H.append(
         '<p>실시간으로 갱신되는 KBO 순위와 오늘 경기 일정, 내 팀 AI 승부예측은 아래에서 한 번에 확인할 수 있습니다.</p>'
         '<p style="text-align:center;margin:20px 0;">'
-        '<a href="https://kbo.hibestmoney.com" target="_blank" '
+        '<a href="https://kbo.hibestmoney.com" '
         'style="display:inline-block;background:#ff3b30;color:#fff;font-weight:700;font-size:17px;'
         'padding:14px 28px;border-radius:10px;text-decoration:none;">⚾ 실시간 야구 무료 중계 보러가기 →</a></p>'
     )
