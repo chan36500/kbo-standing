@@ -2,7 +2,7 @@ name: Post KBO to Blogger
 
 on:
   schedule:
-    - cron: '0 7 * * *'   # 매일 07:00 UTC = 16:00 KST (오후 4시)
+    - cron: '0 4 * * *'   # 매일 04:00 UTC = 13:00 KST (오후 1시)
   workflow_dispatch:        # 수동 실행 버튼
 
 jobs:
