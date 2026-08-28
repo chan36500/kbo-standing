@@ -1,5 +1,5 @@
 {
-  "updated": "8. 28. PM 03:01",
+  "updated": "8. 29. AM 08:16",
   "teams": [
     {
       "name": "KT",
@@ -136,31 +136,31 @@
     {
       "away": "KT",
       "home": "삼성",
-      "time": "18:30",
+      "time": "18:00",
       "stadium": "대구"
     },
     {
       "away": "LG",
       "home": "롯데",
-      "time": "18:30",
+      "time": "18:00",
       "stadium": "사직"
     },
     {
       "away": "NC",
       "home": "한화",
-      "time": "18:30",
+      "time": "18:00",
       "stadium": "대전"
     },
     {
       "away": "SSG",
       "home": "KIA",
-      "time": "18:30",
+      "time": "18:00",
       "stadium": "광주"
     },
     {
       "away": "키움",
       "home": "두산",
-      "time": "18:30",
+      "time": "18:00",
       "stadium": "잠실"
     }
   ]
