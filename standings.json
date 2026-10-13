@@ -1,5 +1,5 @@
 {
-  "updated": "10. 13. AM 11:55",
+  "updated": "10. 14. AM 04:59",
   "teams": [
     {
       "name": "KT",
@@ -132,5 +132,12 @@
       ]
     }
   ],
-  "games": []
+  "games": [
+    {
+      "away": "두산",
+      "home": "LG",
+      "time": "18:30",
+      "stadium": "잠실"
+    }
+  ]
 }
