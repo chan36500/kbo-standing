@@ -1,5 +1,5 @@
 {
-  "updated": "11. 2. AM 10:21",
+  "updated": "11. 3. AM 07:30",
   "teams": [
     {
       "name": "KT",
@@ -132,5 +132,12 @@
       ]
     }
   ],
-  "games": []
+  "games": [
+    {
+      "away": "삼성",
+      "home": "KT",
+      "time": "18:30",
+      "stadium": "수원"
+    }
+  ]
 }
